@@ -1,7 +1,13 @@
 # Matchday Calls — UCL Prediction App
 
-Sign in, predict scores for every Champions League fixture, save your picks
-to your account, and share a read-only link so friends can see your card.
+Sign in, predict scores for every Champions League fixture, earn points when
+you're right, and compete with friends in private leagues.
+
+- **Picks autosave** and **lock at kickoff**.
+- **Scoring**: 3 pts for the exact score, 1 pt for the right result (win/draw/loss).
+- **Private leagues**: create one, send the 6-character invite code or link, and
+  get a live table (ties broken by exact scores, then correct results).
+- **Share cards**: a read-only link to anyone's predictions and points.
 
 Built with Next.js (static export) + Firebase (Google sign-in + Firestore),
 so it deploys **free on GitHub Pages** — no server to run or pay for.
@@ -41,38 +47,69 @@ Open http://localhost:3000.
 
 That's it — every push to `main` redeploys.
 
-## Updating fixtures
+## Updating fixtures and results
 
-Match data lives in `lib/fixtures.ts` as a plain array — no admin panel needed.
-It's seeded with confirmed matchups from the 2026/27 league-phase draw
-(27 August 2026); UEFA publishes exact matchday dates and kick-off times by
-29 August 2026, and the full 8-matches-per-club schedule after that. Update
-the `date` field (and add the rest of the fixtures) once that's out — just
-add/edit objects in that file and push.
+`lib/fixtures.ts` holds the full official 2026/27 league phase: 144 matches,
+8 matchdays, UTC kickoffs from UEFA's fixture list. Clubs (with pots and badge
+colours) are in `lib/teams.ts`.
+
+After a match, add the full-time score as the last argument and push:
+
+```ts
+m("ucl-2049607", 4, "2026-11-03T20:00:00Z", "Barcelona", "Aston Villa", [2, 1]),
+```
+
+Points, totals and every league table update on the next deploy.
+
+- Never change an existing `id` — saved picks are keyed by it.
+- `lib/fixtures.test.ts` checks the UEFA format (18 matches per matchday,
+  4 home + 4 away per club, 1 home + 1 away opponent from each pot), so a typo
+  in a team name or matchday fails CI instead of reaching users.
 
 ## How it works
 
-- **Auth**: Google sign-in via Firebase Auth (client-side only — works fine on static hosting).
-- **Storage**: each user's picks are saved to Firestore at `predictions/{uid}`.
-- **Sharing**: the "Share my card" button copies a link like `/share/?uid=...`. That page is public and read-only — Firestore rules allow anyone to *read* a prediction doc but only its owner to *write* it.
-- **Hosting**: `next.config.ts` sets `output: "export"`, so `npm run build` produces a plain static `out/` folder that GitHub Pages can serve directly — no Node server required in production.
+- **Auth**: Google sign-in via Firebase Auth (popup, with a redirect fallback when popups are blocked).
+- **Storage**: each user's picks live at `predictions/{uid}`; leagues at `leagues/{code}` with a `members` array.
+- **Scoring** (`lib/scoring.ts`) runs in the browser from the results in `lib/fixtures.ts`, so there's no server to run.
+- **Security** (`firestore.rules`): anyone can open a single card by link, but nobody can list every card; writes are validated; league members can only add or remove *themselves*.
+- **Hosting**: `next.config.ts` sets `output: "export"`, so `npm run build` produces a plain static `out/` folder for GitHub Pages.
+- **CI**: every push and PR runs lint, typecheck and unit tests (`npm run check`) before building; only `main` deploys.
+
+### Known limits of the free static setup
+
+- The kickoff lock is enforced by the app, not by Firestore rules (the rules
+  can't see `lib/fixtures.ts`). To make it tamper-proof, move fixtures into
+  Firestore and check `request.time` against their kickoff in the rules.
+- Share links all show the same preview image/text; per-player previews need
+  a server (e.g. Vercel or Firebase App Hosting).
+
+### Recommended Firebase hardening
+
+- **App Check** (reCAPTCHA Enterprise) for Firestore, so only your site can use your project.
+- In Google Cloud Console → APIs & Services → Credentials, restrict the browser
+  API key to your site's domains.
 
 ## Project structure
 
 ```
 app/
   page.tsx                 landing page + Google sign-in
-  predict/page.tsx         the prediction board (auth-gated)
-  share/page.tsx           public read-only card view (?uid=...)
+  predict/page.tsx         your prediction board (autosave, kickoff locks)
+  share/page.tsx           public read-only card (?uid=...)
+  leagues/page.tsx         your leagues + create / join (?join=CODE)
+  league/page.tsx          a league table (?code=CODE)
+  privacy/page.tsx
 components/
-  FixtureCard.tsx          ticket-style match card
-  ScoreStepper.tsx         scoreboard-style score picker
-  Header.tsx
+  Board.tsx                fixtures grouped by matchday + stat row
+  FixtureCard.tsx          ticket-style match card (status, points)
+  ScoreStepper.tsx         accessible score picker
+  Header.tsx, Footer.tsx, States.tsx
 lib/
-  firebase.ts              Firebase init + auth helpers
-  fixtures.ts              the editable match list
-  types.ts
-  useAuth.ts               auth-state hook
+  fixtures.ts              the editable match list + results
+  scoring.ts               points, tallies, locks (+ scoring.test.ts)
+  data.ts                  Firestore reads/writes for cards and leagues
+  firebase.ts              Firebase init, sign-in, friendly errors
+  useAuth.ts, useNow.ts, share.ts, types.ts
 firestore.rules            paste into Firebase Console → Firestore → Rules
 .github/workflows/deploy.yml   builds + deploys to GitHub Pages on push
 ```

@@ -1,12 +1,75 @@
 rules_version = '2';
 
+// Paste into Firebase Console → Firestore → Rules → Publish.
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // ---- predictions/{uid}: one card per player ---------------------------
+    function validPrediction() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['displayName', 'photoURL', 'updatedAt', 'picks'])
+        && d.displayName is string && d.displayName.size() > 0 && d.displayName.size() <= 100
+        && (!('photoURL' in d) || d.photoURL == null
+            || (d.photoURL is string && d.photoURL.size() <= 2048))
+        && d.updatedAt == request.time
+        && (!('picks' in d) || (d.picks is map && d.picks.size() <= 400));
+    }
+
     match /predictions/{uid} {
-      // Anyone with the link can view a prediction card (that's the share feature).
-      allow read: if true;
-      // Only the signed-in owner can create/update their own card.
-      allow write: if request.auth != null && request.auth.uid == uid;
+      // Anyone with a share link can open ONE card...
+      allow get: if true;
+      // ...but nobody can download every card.
+      allow list: if false;
+      allow create, update: if signedIn() && request.auth.uid == uid && validPrediction();
+      allow delete: if signedIn() && request.auth.uid == uid;
+    }
+
+    // ---- leagues/{code}: private leagues joined by invite code ------------
+    match /leagues/{code} {
+      // Knowing the code is the invite.
+      allow get: if signedIn();
+      // No browsing other people's leagues — "my leagues" comes from users/{uid}.
+      allow list: if false;
+
+      allow create: if signedIn()
+        && code.matches('^[A-HJ-NP-Z2-9]{6}$')
+        && request.resource.data.keys().hasOnly(['name', 'ownerUid', 'members', 'createdAt'])
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.createdAt == request.time;
+
+      // Members can only join (add themselves) or leave (remove themselves).
+      allow update: if signedIn()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+        && (
+          (request.resource.data.members.hasAll(resource.data.members)
+            && request.resource.data.members.removeAll(resource.data.members) == [request.auth.uid]
+            && request.resource.data.members.size() <= 50)
+          ||
+          (resource.data.members.hasAll(request.resource.data.members)
+            && resource.data.members.removeAll(request.resource.data.members) == [request.auth.uid]
+            && request.auth.uid != resource.data.ownerUid)
+        );
+
+      allow delete: if signedIn() && request.auth.uid == resource.data.ownerUid;
+    }
+
+    // ---- users/{uid}: private index of the leagues a player is in ---------
+    match /users/{uid} {
+      allow get: if signedIn() && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['leagues'])
+        && request.resource.data.leagues is list
+        && request.resource.data.leagues.size() <= 100;
+      allow delete: if signedIn() && request.auth.uid == uid;
     }
   }
 }

@@ -1,7 +1,14 @@
 "use client";
 
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { User } from "firebase/auth";
 import { logout } from "@/lib/firebase";
+
+const NAV = [
+  { href: "/predict/", label: "My card", match: ["/predict/"] },
+  { href: "/leagues/", label: "Leagues", match: ["/leagues/", "/league/"] },
+];
 
 export default function Header({
   user,
@@ -10,20 +17,44 @@ export default function Header({
   user?: User | null;
   rightSlot?: React.ReactNode;
 }) {
+  const pathname = usePathname();
+
   return (
-    <header className="flex items-center justify-between px-6 sm:px-10 py-6 max-w-5xl mx-auto">
-      <div className="flex items-center gap-2">
-        <div
+    <header className="flex items-center justify-between gap-4 px-5 sm:px-10 py-5 max-w-5xl mx-auto flex-wrap">
+      <Link href={user ? "/predict/" : "/"} className="flex items-center gap-2 shrink-0">
+        <span
           className="h-8 w-8 rounded-md flex items-center justify-center font-black text-sm"
           style={{ background: "var(--accent-violet)", color: "white" }}
+          aria-hidden
         >
           MC
-        </div>
-        <span className="display font-extrabold tracking-tight text-lg">
-          Matchday&nbsp;Calls
         </span>
-      </div>
-      <div className="flex items-center gap-4">
+        <span className="display font-extrabold tracking-tight text-lg">Matchday&nbsp;Calls</span>
+      </Link>
+
+      <div className="flex items-center gap-2 sm:gap-4 flex-wrap justify-end">
+        {user && (
+          <nav aria-label="Main" className="flex items-center gap-1">
+            {NAV.map((n) => {
+              const path = pathname?.replace(/\/?$/, "/") ?? "";
+              const active = n.match.some((m) => path.startsWith(m));
+              return (
+                <Link
+                  key={n.href}
+                  href={n.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`text-sm px-3 py-1.5 rounded-lg transition-colors ${
+                    active
+                      ? "bg-[var(--accent-violet-soft)] text-[var(--text-primary)]"
+                      : "text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                  }`}
+                >
+                  {n.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
         {rightSlot}
         {user && (
           <div className="flex items-center gap-3">
@@ -32,6 +63,7 @@ export default function Header({
               <img
                 src={user.photoURL}
                 alt=""
+                referrerPolicy="no-referrer"
                 className="h-8 w-8 rounded-full border border-[var(--border)]"
               />
             )}

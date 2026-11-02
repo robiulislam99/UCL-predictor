@@ -1,26 +1,38 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Archivo, Inter, Space_Mono } from "next/font/google";
 import "./globals.css";
 
+// Self-hosted at build time: no request to Google, no layout shift.
+const display = Archivo({ subsets: ["latin"], weight: ["700", "800", "900"], variable: "--font-display" });
+const body = Inter({ subsets: ["latin"], variable: "--font-body" });
+const score = Space_Mono({ subsets: ["latin"], weight: ["400", "700"], variable: "--font-score" });
+
+const title = "Matchday Calls — Champions League Predictions";
+const description =
+  "Predict every Champions League score, earn points when you're right, and beat your friends in a private league.";
+
 export const metadata: Metadata = {
-  title: "Matchday Calls — UCL Predictions",
-  description:
-    "Predict every Champions League score, save it to your account, and challenge your friends.",
+  title: { default: title, template: "%s · Matchday Calls" },
+  description,
+  applicationName: "Matchday Calls",
+  openGraph: { title, description, type: "website", siteName: "Matchday Calls" },
+  twitter: { card: "summary", title, description },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export const viewport: Viewport = {
+  themeColor: "#0a0f1e",
+  colorScheme: "dark",
+};
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800;900&family=Inter:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
-      <body className="antialiased">{children}</body>
+    <html lang="en" className={`${display.variable} ${body.variable} ${score.variable}`}>
+      <body className="antialiased">
+        <a href="#main" className="skip-link">
+          Skip to content
+        </a>
+        <div id="main">{children}</div>
+      </body>
     </html>
   );
 }

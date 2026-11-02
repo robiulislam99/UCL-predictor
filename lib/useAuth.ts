@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "./firebase";
 
@@ -15,6 +16,25 @@ export function useAuth() {
     });
     return unsub;
   }, []);
+
+  return { user, loading };
+}
+
+/** Only allow same-site relative paths as a post-login destination. */
+export function safeNext(next: string | null | undefined) {
+  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/predict/";
+}
+
+/** For signed-in-only pages: sends signed-out visitors to the landing page, then back here. */
+export function useRequireUser() {
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (loading || user) return;
+    const here = window.location.pathname.slice((process.env.NEXT_PUBLIC_BASE_PATH ?? "").length);
+    router.replace(`/?next=${encodeURIComponent(here + window.location.search)}`);
+  }, [loading, user, router]);
 
   return { user, loading };
 }

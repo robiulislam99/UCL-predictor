@@ -3,6 +3,7 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches: ["main"]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -27,6 +28,9 @@ jobs:
 
       - run: npm ci
 
+      - name: Lint, typecheck, test
+        run: npm run check
+
       - name: Build static site
         env:
           # This becomes /<repo-name>/ so GitHub Pages project sites resolve correctly.
@@ -47,6 +51,7 @@ jobs:
           path: ./out
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-latest
     environment:

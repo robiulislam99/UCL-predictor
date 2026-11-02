@@ -1,51 +1,71 @@
 "use client";
 
 import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
 import Header from "@/components/Header";
-import FixtureCard from "@/components/FixtureCard";
-import { db } from "@/lib/firebase";
+import Footer from "@/components/Footer";
+import Board, { StatRow } from "@/components/Board";
+import { LoadingState, MessageState } from "@/components/States";
+import { getPrediction } from "@/lib/data";
 import { fixtures } from "@/lib/fixtures";
+import { tally } from "@/lib/scoring";
+import { useAuth } from "@/lib/useAuth";
+import { useNow } from "@/lib/useNow";
 import { PredictionDoc } from "@/lib/types";
 
+type State =
+  | { kind: "loading" }
+  | { kind: "missing" }
+  | { kind: "error" }
+  | { kind: "ready"; data: PredictionDoc };
+
 function ShareContent() {
-  const params = useSearchParams();
-  const uid = params.get("uid");
-  const [data, setData] = useState<PredictionDoc | null | undefined>(
-    undefined
-  );
+  const uid = useSearchParams().get("uid");
+  const { user } = useAuth();
+  const now = useNow();
+  const [state, setState] = useState<State>({ kind: "loading" });
 
   useEffect(() => {
-    if (!uid) {
-      setData(null);
-      return;
-    }
-    (async () => {
-      const snap = await getDoc(doc(db, "predictions", uid));
-      setData(snap.exists() ? (snap.data() as PredictionDoc) : null);
-    })();
+    if (!uid) return;
+    let cancelled = false;
+    getPrediction(uid)
+      .then((data) => !cancelled && setState(data ? { kind: "ready", data } : { kind: "missing" }))
+      .catch((e) => {
+        console.error(e);
+        if (!cancelled) setState({ kind: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [uid]);
 
-  if (!uid || data === null) {
+  const cta = (
+    <Link href={user ? "/predict/" : "/"} className="btn-primary inline-block px-5 py-2.5">
+      {user ? "Go to my card" : "Make your own predictions"}
+    </Link>
+  );
+
+  if (!uid) {
+    return <MessageState title="No card selected" body="Ask your friend for their share link." action={cta} />;
+  }
+  if (state.kind === "loading") return <LoadingState label="Loading prediction card…" />;
+  if (state.kind === "missing") {
     return (
-      <p className="text-[var(--text-muted)] text-center mt-10">
-        {uid
-          ? "This prediction card doesn't exist, or the link is wrong."
-          : "No card selected. Ask your friend for their share link."}
-      </p>
+      <MessageState
+        title="Card not found"
+        body="This prediction card doesn't exist, or the link is wrong."
+        action={cta}
+      />
     );
   }
-
-  if (data === undefined) {
-    return (
-      <p className="text-[var(--text-muted)] text-center mt-10">
-        Loading prediction card…
-      </p>
-    );
+  if (state.kind === "error") {
+    return <MessageState title="Couldn't load this card" body="Check your connection and try again." />;
   }
 
-  const madePickCount = Object.keys(data.picks ?? {}).length;
+  const { data } = state;
+  const t = tally(data.picks, fixtures);
+  const isMine = user?.uid === uid;
 
   return (
     <>
@@ -55,43 +75,48 @@ function ShareContent() {
           <img
             src={data.photoURL}
             alt=""
+            referrerPolicy="no-referrer"
             className="h-12 w-12 rounded-full border border-[var(--border)]"
           />
         )}
-        <div>
-          <h1 className="display font-black text-2xl sm:text-3xl">
-            {data.displayName}&apos;s card
+        <div className="min-w-0">
+          <h1 className="display font-black text-2xl sm:text-3xl truncate">
+            {isMine ? "Your card" : `${data.displayName}'s card`}
           </h1>
-          <p className="text-sm text-[var(--text-muted)]">
-            {madePickCount} of {fixtures.length} fixtures called
-          </p>
+          <p className="text-sm text-[var(--text-muted)]">Read-only · picks lock at kickoff</p>
         </div>
       </div>
 
-      <div className="flex flex-col gap-3">
-        {fixtures.map((f) => (
-          <FixtureCard key={f.id} fixture={f} pick={data.picks?.[f.id]} readOnly />
-        ))}
-      </div>
+      <StatRow
+        items={[
+          { label: "Points", value: t.points },
+          { label: "Exact", value: t.exact },
+          { label: "Called", value: `${t.picked}/${fixtures.length}` },
+        ]}
+      />
+      <Board picks={data.picks} now={now} />
+      {!isMine && <div className="text-center mt-10">{cta}</div>}
     </>
   );
 }
 
+function ShareHeader() {
+  const { user } = useAuth();
+  return <Header user={user} />;
+}
+
 export default function SharePage() {
   return (
-    <main className="pb-20">
-      <Header />
-      <section className="max-w-3xl mx-auto px-6 sm:px-10">
-        <Suspense
-          fallback={
-            <p className="text-[var(--text-muted)] text-center mt-10">
-              Loading…
-            </p>
-          }
-        >
-          <ShareContent />
-        </Suspense>
-      </section>
-    </main>
+    <>
+      <main className="pb-10">
+        <ShareHeader />
+        <section className="max-w-3xl mx-auto px-5 sm:px-10">
+          <Suspense fallback={<LoadingState />}>
+            <ShareContent />
+          </Suspense>
+        </section>
+      </main>
+      <Footer />
+    </>
   );
 }
