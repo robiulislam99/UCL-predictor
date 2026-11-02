@@ -3,11 +3,12 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import { LoadingState } from "@/components/States";
+import AppShell, { PageHeader } from "@/components/AppShell";
+import { LoadingState, PageLoading } from "@/components/States";
+import { ChevronRightIcon, TrophyIcon, UsersIcon } from "@/components/icons";
+import { plural } from "@/lib/format";
 import { useRequireUser } from "@/lib/useAuth";
-import { CODE_PATTERN, createLeague, getMyLeagues, joinLeague, normalizeCode } from "@/lib/data";
+import { CODE_PATTERN, createLeague, getMyLeagues, joinLeague, MAX_LEAGUE_MEMBERS, normalizeCode } from "@/lib/data";
 import { friendlyError } from "@/lib/firebase";
 import { League } from "@/lib/types";
 import { User } from "firebase/auth";
@@ -29,31 +30,46 @@ function MyLeagues({ user }: { user: User }) {
     };
   }, [user]);
 
-  if (error) return <p className="text-sm text-[var(--accent-red)]">Couldn&apos;t load your leagues.</p>;
+  if (error) return <p className="card px-5 py-4 text-sm text-red">Couldn&apos;t load your leagues. Refresh to try again.</p>;
   if (!leagues) return <LoadingState label="Loading your leagues…" />;
   if (leagues.length === 0) {
     return (
-      <p className="text-sm text-[var(--text-muted)] ticket px-5 py-6 text-center">
-        You&apos;re not in any leagues yet. Create one below and send the code to your friends.
-      </p>
+      <div className="card flex flex-col items-center px-6 py-10 text-center">
+        <span className="mb-3 grid h-12 w-12 place-items-center rounded-full bg-violet-soft text-[#b7a6ff]">
+          <TrophyIcon className="h-6 w-6" />
+        </span>
+        <p className="font-semibold">No leagues yet</p>
+        <p className="mt-1 max-w-sm text-sm text-muted">
+          Start one below and send the invite code to your friends, or join theirs with a code.
+        </p>
+      </div>
     );
   }
   return (
-    <ul className="flex flex-col gap-3">
+    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
       {leagues.map((l) => (
         <li key={l.code}>
           <Link
             href={`/league/?code=${l.code}`}
-            className="ticket px-5 py-4 flex items-center justify-between gap-4 hover:border-[var(--accent-violet)] transition-colors"
+            className="card group flex items-center gap-4 px-4 py-4 transition-colors hover:border-line-strong hover:bg-surface-2 sm:px-5"
           >
-            <span className="min-w-0">
-              <span className="font-semibold block truncate">{l.name}</span>
-              <span className="text-xs text-[var(--text-muted)]">
-                {l.members.length} player{l.members.length === 1 ? "" : "s"}
-                {l.ownerUid === user.uid && " · you run this league"}
+            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-violet-soft font-display text-sm font-black text-[#b7a6ff]">
+              {l.name.trim().charAt(0).toUpperCase() || "L"}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-semibold">{l.name}</span>
+              <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
+                <span className="inline-flex items-center gap-1">
+                  <UsersIcon className="h-3.5 w-3.5" />
+                  {plural(l.members.length, "player")}
+                </span>
+                {l.ownerUid === user.uid && <span className="chip chip-violet">Owner</span>}
               </span>
             </span>
-            <span className="score-font text-sm text-[var(--accent-gold)] shrink-0">{l.code} →</span>
+            <span className="flex shrink-0 items-center gap-1 font-mono text-xs text-gold">
+              {l.code}
+              <ChevronRightIcon className="h-4 w-4 text-muted transition-transform group-hover:translate-x-0.5" />
+            </span>
           </Link>
         </li>
       ))}
@@ -114,47 +130,57 @@ function Forms({ user }: { user: User }) {
   };
 
   return (
-    <div className="grid sm:grid-cols-2 gap-4 mt-10">
-      <form onSubmit={onJoin} className="ticket p-5 flex flex-col gap-3">
-        <h2 className="font-semibold">Join a league</h2>
-        <label htmlFor="join-code" className="text-xs text-[var(--text-muted)]">
-          Invite code
-        </label>
-        <input
-          id="join-code"
-          value={code}
-          onChange={(e) => setCode(normalizeCode(e.target.value).slice(0, 6))}
-          placeholder="K7MX2Q"
-          autoComplete="off"
-          autoCapitalize="characters"
-          spellCheck={false}
-          className="field score-font tracking-[0.3em] uppercase"
-        />
-        <button type="submit" disabled={busy !== null} className="btn-primary px-5 py-2.5">
-          {busy === "join" ? "Joining…" : "Join"}
-        </button>
-      </form>
+    <div className="mt-10">
+      <h2 className="mb-4 font-display text-xl font-black tracking-tight">Join or start a league</h2>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <form onSubmit={onJoin} className="card flex flex-col gap-3 p-5">
+          <div>
+            <h3 className="font-semibold">Join with a code</h3>
+            <p className="mt-0.5 text-sm text-muted">Got an invite? Enter the 6-character code.</p>
+          </div>
+          <label htmlFor="join-code" className="sr-only">
+            Invite code
+          </label>
+          <input
+            id="join-code"
+            value={code}
+            onChange={(e) => setCode(normalizeCode(e.target.value).slice(0, 6))}
+            placeholder="K7MX2Q"
+            autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            inputMode="text"
+            className="field font-mono uppercase tracking-[0.3em]"
+          />
+          <button type="submit" disabled={busy !== null} className="btn btn-primary mt-auto">
+            {busy === "join" ? "Joining…" : "Join league"}
+          </button>
+        </form>
 
-      <form onSubmit={onCreate} className="ticket p-5 flex flex-col gap-3">
-        <h2 className="font-semibold">Start a league</h2>
-        <label htmlFor="league-name" className="text-xs text-[var(--text-muted)]">
-          League name
-        </label>
-        <input
-          id="league-name"
-          value={name}
-          onChange={(e) => setName(e.target.value.slice(0, 40))}
-          placeholder="Sunday League Legends"
-          className="field"
-          required
-        />
-        <button type="submit" disabled={busy !== null || !name.trim()} className="btn-ghost px-5 py-2.5">
-          {busy === "create" ? "Creating…" : "Create league"}
-        </button>
-      </form>
+        <form onSubmit={onCreate} className="card flex flex-col gap-3 p-5">
+          <div>
+            <h3 className="font-semibold">Start a new league</h3>
+            <p className="mt-0.5 text-sm text-muted">You&apos;ll get a code to share. Up to {MAX_LEAGUE_MEMBERS} players.</p>
+          </div>
+          <label htmlFor="league-name" className="sr-only">
+            League name
+          </label>
+          <input
+            id="league-name"
+            value={name}
+            onChange={(e) => setName(e.target.value.slice(0, 40))}
+            placeholder="Sunday League Legends"
+            className="field"
+            required
+          />
+          <button type="submit" disabled={busy !== null || !name.trim()} className="btn btn-secondary mt-auto">
+            {busy === "create" ? "Creating…" : "Create league"}
+          </button>
+        </form>
+      </div>
 
       {error && (
-        <p role="alert" className="sm:col-span-2 text-sm text-[var(--accent-red)]">
+        <p role="alert" className="mt-4 text-sm text-red">
           {error}
         </p>
       )}
@@ -164,25 +190,18 @@ function Forms({ user }: { user: User }) {
 
 export default function LeaguesPage() {
   const { user, loading } = useRequireUser();
-  if (loading || !user) return <LoadingState label="Checking sign-in…" />;
+  if (loading || !user) return <PageLoading label="Checking sign-in…" />;
 
   return (
-    <>
-      <main className="pb-10">
-        <Header user={user} />
-        <section className="max-w-3xl mx-auto px-5 sm:px-10">
-          <h1 className="display font-black text-2xl sm:text-3xl mb-1">Leagues</h1>
-          <p className="text-sm text-[var(--text-muted)] mb-6">
-            Private tables for you and your friends. Everyone&apos;s card counts in every league
-            they&apos;re in.
-          </p>
-          <MyLeagues user={user} />
-          <Suspense>
-            <Forms user={user} />
-          </Suspense>
-        </section>
-      </main>
-      <Footer />
-    </>
+    <AppShell user={user}>
+      <PageHeader
+        title="Leagues"
+        description="Private tables for you and your friends. Your one prediction card counts in every league you're in."
+      />
+      <MyLeagues user={user} />
+      <Suspense>
+        <Forms user={user} />
+      </Suspense>
+    </AppShell>
   );
 }

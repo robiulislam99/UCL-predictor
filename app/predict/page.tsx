@@ -1,15 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
+import AppShell, { PageHeader } from "@/components/AppShell";
 import Board, { StatRow } from "@/components/Board";
-import { LoadingState, MessageState } from "@/components/States";
+import { LoadingState, MessageState, PageLoading } from "@/components/States";
+import { AlertIcon, CheckIcon, ShareIcon } from "@/components/icons";
+import { plural } from "@/lib/format";
+import { appUrl } from "@/lib/site";
 import { useRequireUser } from "@/lib/useAuth";
 import { useNow } from "@/lib/useNow";
 import { getPrediction, savePrediction } from "@/lib/data";
 import { fixtures } from "@/lib/fixtures";
-import { isLocked, tally } from "@/lib/scoring";
+import { isLocked, POINTS, tally } from "@/lib/scoring";
 import { Pick, Picks } from "@/lib/types";
 import { shareOrCopy } from "@/lib/share";
 
@@ -91,8 +93,7 @@ export default function PredictPage() {
 
   const share = async () => {
     if (!user) return;
-    const basePath = process.env.NEXT_PUBLIC_BASE_PATH || "";
-    const url = `${window.location.origin}${basePath}/share/?uid=${user.uid}`;
+    const url = appUrl(`/share/?uid=${user.uid}`);
     const result = await shareOrCopy({
       title: "My Matchday Calls card",
       text: "Here are my Champions League predictions — think you can beat them?",
@@ -103,96 +104,93 @@ export default function PredictPage() {
     if (result !== "shared") setTimeout(() => setShareMsg(null), 2000);
   };
 
-  if (loading || !user) return <LoadingState label="Checking sign-in…" />;
+  if (loading || !user) return <PageLoading label="Checking sign-in…" />;
 
   const t = tally(picks, fixtures);
   const open = fixtures.filter((f) => !isLocked(f, now));
   const openUnpicked = open.filter((f) => !picks[f.id]).length;
 
-  const statusText =
-    saveState === "saving"
-      ? "Saving…"
-      : saveState === "error"
-        ? "Couldn't save your latest picks."
-        : dirty
-          ? "Unsaved changes…"
-          : everSaved
-            ? "All picks saved ✓"
-            : "Picks save automatically";
+  const status =
+    loadState !== "ready" ? null : saveState === "error" ? (
+      <button
+        type="button"
+        onClick={() => setSaveAttempt((n) => n + 1)}
+        className="chip bg-red/15 py-1 text-red"
+        role="status"
+      >
+        <AlertIcon className="h-3.5 w-3.5" />
+        Not saved · Retry
+      </button>
+    ) : (
+      <span role="status" className={`chip py-1 ${saveState === "saving" || dirty ? "chip-muted" : everSaved ? "chip-green" : "chip-muted"}`}>
+        {saveState === "saving" ? (
+          <>
+            <span className="spinner h-3 w-3 border-[1.5px]" aria-hidden />
+            Saving…
+          </>
+        ) : dirty ? (
+          "Unsaved…"
+        ) : everSaved ? (
+          <>
+            <CheckIcon className="h-3.5 w-3.5" />
+            Saved
+          </>
+        ) : (
+          "Autosave"
+        )}
+      </span>
+    );
 
   return (
-    <>
-      <main className="pb-28">
-        <Header
-          user={user}
-          rightSlot={
-            <button onClick={share} className="btn-ghost text-sm px-4 py-2" aria-live="polite">
-              {shareMsg ?? "Share my card"}
+    <AppShell user={user} status={status}>
+      <PageHeader
+        eyebrow="League phase · 2026/27"
+        title="Your predictions"
+        description={
+          openUnpicked > 0
+            ? `${plural(openUnpicked, "open fixture")} still to call. Picks save automatically and lock at kickoff.`
+            : open.length > 0
+              ? "Every open fixture is called. Nice work."
+              : "No open fixtures right now. Check back when the next matchday is scheduled."
+        }
+        actions={
+          <button type="button" onClick={share} className="btn btn-secondary" aria-live="polite">
+            <ShareIcon className="h-4 w-4" />
+            {shareMsg ?? "Share my card"}
+          </button>
+        }
+      />
+
+      {loadState === "loading" && <LoadingState label="Loading your card…" />}
+      {loadState === "error" && (
+        <MessageState
+          title="Couldn't load your card"
+          body="Check your connection and try again."
+          action={
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                setLoadState("loading");
+                setLoadAttempt((n) => n + 1);
+              }}
+            >
+              Retry
             </button>
           }
         />
-
-        <section className="max-w-3xl mx-auto px-5 sm:px-10">
-          <h1 className="display font-black text-2xl sm:text-3xl mb-1">Your predictions</h1>
-          <p className="text-sm text-[var(--text-muted)] mb-6">
-            {openUnpicked > 0
-              ? `${openUnpicked} open fixture${openUnpicked === 1 ? "" : "s"} still to call.`
-              : open.length > 0
-                ? "Every open fixture is called. Nice."
-                : "No open fixtures right now — check back when the next matchday is scheduled."}
-          </p>
-
-          {loadState === "loading" && <LoadingState label="Loading your card…" />}
-          {loadState === "error" && (
-            <MessageState
-              title="Couldn't load your card"
-              body="Check your connection and try again."
-              action={
-                <button
-                  className="btn-primary px-5 py-2.5"
-                  onClick={() => {
-                    setLoadState("loading");
-                    setLoadAttempt((n) => n + 1);
-                  }}
-                >
-                  Retry
-                </button>
-              }
-            />
-          )}
-          {loadState === "ready" && (
-            <>
-              <StatRow
-                items={[
-                  { label: "Points", value: t.points },
-                  { label: "Exact", value: t.exact },
-                  { label: "Called", value: `${t.picked}/${fixtures.length}` },
-                ]}
-              />
-              <Board picks={picks} now={now} onChange={updatePick} />
-            </>
-          )}
-        </section>
-      </main>
-      <Footer />
-
-      {loadState === "ready" && (
-        <div className="fixed bottom-0 inset-x-0 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur pb-[env(safe-area-inset-bottom)]">
-          <div className="max-w-3xl mx-auto px-5 sm:px-10 py-3.5 flex items-center justify-between gap-4">
-            <span
-              role="status"
-              className={`text-sm ${saveState === "error" ? "text-[var(--accent-red)]" : "text-[var(--text-muted)]"}`}
-            >
-              {statusText}
-            </span>
-            {saveState === "error" && (
-              <button className="btn-primary px-5 py-2" onClick={() => setSaveAttempt((n) => n + 1)}>
-                Retry
-              </button>
-            )}
-          </div>
-        </div>
       )}
-    </>
+      {loadState === "ready" && (
+        <>
+          <StatRow
+            items={[
+              { label: "Points", value: t.points, hint: `${POINTS.exact} per exact · ${POINTS.outcome} per result` },
+              { label: "Exact", value: t.exact, hint: "Spot-on scorelines" },
+              { label: "Called", value: `${t.picked}/${fixtures.length}`, hint: "Fixtures predicted" },
+            ]}
+          />
+          <Board picks={picks} now={now} onChange={updatePick} />
+        </>
+      )}
+    </AppShell>
   );
 }

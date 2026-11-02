@@ -3,10 +3,11 @@
 import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
+import AppShell from "@/components/AppShell";
+import { Avatar } from "@/components/Header";
 import Board, { StatRow } from "@/components/Board";
 import { LoadingState, MessageState } from "@/components/States";
+import { CardIcon } from "@/components/icons";
 import { getPrediction } from "@/lib/data";
 import { fixtures } from "@/lib/fixtures";
 import { tally } from "@/lib/scoring";
@@ -41,18 +42,26 @@ function ShareContent() {
   }, [uid]);
 
   const cta = (
-    <Link href={user ? "/predict/" : "/"} className="btn-primary inline-block px-5 py-2.5">
+    <Link href={user ? "/predict/" : "/"} className="btn btn-primary">
       {user ? "Go to my card" : "Make your own predictions"}
     </Link>
   );
 
   if (!uid) {
-    return <MessageState title="No card selected" body="Ask your friend for their share link." action={cta} />;
+    return (
+      <MessageState
+        icon={<CardIcon className="h-6 w-6" />}
+        title="No card selected"
+        body="Ask your friend for their share link."
+        action={cta}
+      />
+    );
   }
   if (state.kind === "loading") return <LoadingState label="Loading prediction card…" />;
   if (state.kind === "missing") {
     return (
       <MessageState
+        icon={<CardIcon className="h-6 w-6" />}
         title="Card not found"
         body="This prediction card doesn't exist, or the link is wrong."
         action={cta}
@@ -69,21 +78,14 @@ function ShareContent() {
 
   return (
     <>
-      <div className="flex items-center gap-3 mb-6">
-        {data.photoURL && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.photoURL}
-            alt=""
-            referrerPolicy="no-referrer"
-            className="h-12 w-12 rounded-full border border-[var(--border)]"
-          />
-        )}
+      <div className="mb-6 flex items-center gap-4 sm:mb-8">
+        <Avatar name={data.displayName} photoURL={data.photoURL} size="h-14 w-14 text-base" />
         <div className="min-w-0">
-          <h1 className="display font-black text-2xl sm:text-3xl truncate">
+          <p className="mb-1 font-mono text-xs uppercase tracking-[0.22em] text-gold">Prediction card</p>
+          <h1 className="font-display text-[26px] font-black leading-tight tracking-tight [overflow-wrap:anywhere] sm:text-4xl">
             {isMine ? "Your card" : `${data.displayName}'s card`}
           </h1>
-          <p className="text-sm text-[var(--text-muted)]">Read-only · picks lock at kickoff</p>
+          <p className="text-sm text-muted">Read-only · picks lock at kickoff</p>
         </div>
       </div>
 
@@ -95,28 +97,24 @@ function ShareContent() {
         ]}
       />
       <Board picks={data.picks} now={now} />
-      {!isMine && <div className="text-center mt-10">{cta}</div>}
+      {!isMine && (
+        <div className="card mt-10 flex flex-col items-center gap-3 px-6 py-8 text-center">
+          <p className="font-display text-xl font-black">Think you can do better?</p>
+          <p className="max-w-md text-sm text-muted">Make your own predictions and start a league with your friends. It&apos;s free.</p>
+          {cta}
+        </div>
+      )}
     </>
   );
 }
 
-function ShareHeader() {
-  const { user } = useAuth();
-  return <Header user={user} />;
-}
-
 export default function SharePage() {
+  const { user } = useAuth();
   return (
-    <>
-      <main className="pb-10">
-        <ShareHeader />
-        <section className="max-w-3xl mx-auto px-5 sm:px-10">
-          <Suspense fallback={<LoadingState />}>
-            <ShareContent />
-          </Suspense>
-        </section>
-      </main>
-      <Footer />
-    </>
+    <AppShell user={user}>
+      <Suspense fallback={<LoadingState />}>
+        <ShareContent />
+      </Suspense>
+    </AppShell>
   );
 }

@@ -10,20 +10,20 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { User } from "firebase/auth";
-import { db } from "./firebase";
+import { getDb } from "./firebase";
 import { League, Picks, PredictionDoc } from "./types";
 
 // ---- Predictions: predictions/{uid} ------------------------------------
 
 export async function getPrediction(uid: string) {
-  const snap = await getDoc(doc(db, "predictions", uid));
+  const snap = await getDoc(doc(getDb(), "predictions", uid));
   return snap.exists() ? (snap.data() as PredictionDoc) : null;
 }
 
 /** Saves the profile fields, and the picks when given. Always merges. */
 export async function savePrediction(user: User, picks?: Picks) {
   await setDoc(
-    doc(db, "predictions", user.uid),
+    doc(getDb(), "predictions", user.uid),
     {
       displayName: (user.displayName ?? "Anonymous").slice(0, 100),
       photoURL: user.photoURL ?? null,
@@ -53,12 +53,12 @@ export function normalizeCode(raw: string) {
 }
 
 export async function getLeague(code: string): Promise<League | null> {
-  const snap = await getDoc(doc(db, "leagues", code));
+  const snap = await getDoc(doc(getDb(), "leagues", code));
   return snap.exists() ? ({ code, ...snap.data() } as League) : null;
 }
 
 export async function getMyLeagues(uid: string): Promise<League[]> {
-  const snap = await getDoc(doc(db, "users", uid));
+  const snap = await getDoc(doc(getDb(), "users", uid));
   const codes: string[] = snap.exists() ? (snap.data().leagues ?? []) : [];
   const leagues = await Promise.all(codes.map((c) => getLeague(c).catch(() => null)));
   return leagues
@@ -67,7 +67,7 @@ export async function getMyLeagues(uid: string): Promise<League[]> {
 }
 
 function userIndex(uid: string) {
-  return doc(db, "users", uid);
+  return doc(getDb(), "users", uid);
 }
 
 export async function createLeague(user: User, name: string) {
@@ -75,8 +75,8 @@ export async function createLeague(user: User, name: string) {
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = randomCode();
     if (await getLeague(code)) continue;
-    const batch = writeBatch(db);
-    batch.set(doc(db, "leagues", code), {
+    const batch = writeBatch(getDb());
+    batch.set(doc(getDb(), "leagues", code), {
       name: name.trim().slice(0, 40),
       ownerUid: user.uid,
       members: [user.uid],
@@ -97,8 +97,8 @@ export async function joinLeague(user: User, code: string): Promise<JoinResult> 
   const alreadyMember = league.members.includes(user.uid);
   if (!alreadyMember && league.members.length >= MAX_LEAGUE_MEMBERS) return "full";
   await savePrediction(user);
-  const batch = writeBatch(db);
-  if (!alreadyMember) batch.update(doc(db, "leagues", code), { members: arrayUnion(user.uid) });
+  const batch = writeBatch(getDb());
+  if (!alreadyMember) batch.update(doc(getDb(), "leagues", code), { members: arrayUnion(user.uid) });
   // Also repairs the index if the player was a member but it's missing.
   batch.set(userIndex(user.uid), { leagues: arrayUnion(code) }, { merge: true });
   await batch.commit();
@@ -106,8 +106,8 @@ export async function joinLeague(user: User, code: string): Promise<JoinResult> 
 }
 
 export async function leaveLeague(uid: string, code: string) {
-  const batch = writeBatch(db);
-  batch.update(doc(db, "leagues", code), { members: arrayRemove(uid) });
+  const batch = writeBatch(getDb());
+  batch.update(doc(getDb(), "leagues", code), { members: arrayRemove(uid) });
   batch.set(userIndex(uid), { leagues: arrayRemove(code) }, { merge: true });
   await batch.commit();
 }

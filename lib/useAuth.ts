@@ -3,21 +3,23 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "./firebase";
+import { firebaseConfigured, getFirebaseAuth } from "./firebase";
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Without a Firebase config nobody can sign in, so there is nothing to wait for.
+  const [loading, setLoading] = useState(firebaseConfigured);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    if (!firebaseConfigured) return;
+    const unsub = onAuthStateChanged(getFirebaseAuth(), (u) => {
       setUser(u);
       setLoading(false);
     });
     return unsub;
   }, []);
 
-  return { user, loading };
+  return { user, loading, configured: firebaseConfigured };
 }
 
 /** Only allow same-site relative paths as a post-login destination. */
