@@ -3,7 +3,9 @@
 import { Fixture, Pick } from "@/lib/types";
 import { POINTS, scorePick } from "@/lib/scoring";
 import { teamCode } from "@/lib/teams";
+import { countdown, formatKickoff } from "@/lib/format";
 import ScoreStepper from "./ScoreStepper";
+import { ClockIcon, LockIcon } from "./icons";
 
 /** Dark or light text, whichever reads better on the badge colour. */
 function textOn(hex: string) {
@@ -26,64 +28,74 @@ function Badge({ team, color }: { team: string; color: string }) {
       .join("")
       .toUpperCase();
   return (
-    <div
+    <span
       aria-hidden
-      className="h-10 w-10 rounded-full flex items-center justify-center font-bold text-[11px] tracking-tight shrink-0 ring-1 ring-white/10"
+      className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[10px] font-bold tracking-tight ring-1 ring-white/10"
       style={{ background: color, color: textOn(color) }}
     >
       {label}
-    </div>
+    </span>
   );
 }
 
-const kickoffFormat = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-  hour: "2-digit",
-  minute: "2-digit",
-});
+const HOUR = 3_600_000;
 
-function countdown(ms: number) {
-  const mins = Math.floor(ms / 60_000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 48) return `${hours}h ${mins % 60}m`;
-  return `${Math.floor(hours / 24)}d`;
-}
+function StatusLine({ fixture, locked, now }: { fixture: Fixture; locked: boolean; now: number }) {
+  const when = fixture.kickoff ? formatKickoff(fixture.kickoff) : null;
+  const whenText = when ? `${when.day} · ${when.time}` : "Kickoff TBD";
 
-function Status({ fixture, locked, now }: { fixture: Fixture; locked: boolean; now: number }) {
   if (fixture.result) {
     return (
-      <span className="chip">
-        FT {fixture.result.home}–{fixture.result.away}
+      <span className="flex items-center gap-2 text-muted">
+        <span className="chip">FT</span>
+        {when?.day}
       </span>
     );
   }
   if (locked) {
     const started = fixture.kickoff ? now - Date.parse(fixture.kickoff) : 0;
     return (
-      <span className="chip chip-muted">
-        {started > 2.5 * 3_600_000 ? "Locked · awaiting result" : "Locked · in play"}
+      <span className="flex items-center gap-1.5 text-muted">
+        <LockIcon className="h-3.5 w-3.5" />
+        {started > 2.5 * HOUR ? "Locked · awaiting result" : "Locked · in play"}
       </span>
     );
   }
-  if (!fixture.kickoff) return <span className="text-[var(--text-muted)]">Kickoff TBD</span>;
+  return <span className="text-muted">{whenText}</span>;
+}
+
+function Aside({ fixture, locked, now, points }: { fixture: Fixture; locked: boolean; now: number; points: number | null }) {
+  if (points !== null) {
+    const tone = points === POINTS.exact ? "chip-gold" : points === POINTS.outcome ? "chip-green" : "chip-muted";
+    const label = points === POINTS.exact ? "Exact" : points === POINTS.outcome ? "Result" : "Miss";
+    return (
+      <span className={`chip ${tone}`}>
+        +{points} pt{points === 1 ? "" : "s"} · {label}
+      </span>
+    );
+  }
+  if (fixture.result) return <span className="chip chip-muted">No pick</span>;
+  if (locked || !fixture.kickoff) return null;
   const left = Date.parse(fixture.kickoff) - now;
+  if (left >= 72 * HOUR) return null;
   return (
-    <span className="text-[var(--text-muted)]">
-      {kickoffFormat.format(new Date(fixture.kickoff))}
-      {left < 72 * 3_600_000 && (
-        <span className="ml-1.5 text-[var(--accent-gold)]">· locks in {countdown(left)}</span>
-      )}
+    <span className={`chip ${left < 3 * HOUR ? "chip-gold" : "chip-violet"}`}>
+      <ClockIcon className="h-3 w-3" />
+      Locks in {countdown(left)}
     </span>
   );
 }
 
-function PointsBadge({ points }: { points: number }) {
-  const tone =
-    points === POINTS.exact ? "chip-gold" : points === POINTS.outcome ? "chip-green" : "chip-muted";
-  return <span className={`chip ${tone}`}>+{points} pt{points === 1 ? "" : "s"}</span>;
+function ScoreValue({ value, tone }: { value: number | undefined; tone: "result" | "pick" }) {
+  return (
+    <span
+      className={`grid h-9 w-10 place-items-center rounded-lg font-mono text-lg font-bold ${
+        tone === "result" ? "bg-surface-2 text-fg" : value === undefined ? "text-muted" : "text-gold"
+      }`}
+    >
+      {value ?? "–"}
+    </span>
+  );
 }
 
 export default function FixtureCard({
@@ -102,64 +114,51 @@ export default function FixtureCard({
   now: number;
 }) {
   const points = scorePick(pick, fixture.result);
-  const showStatic = readOnly || locked;
+  const editable = !readOnly && !locked;
+  const sides = [
+    { key: "home" as const, team: fixture.home, color: fixture.homeColor },
+    { key: "away" as const, team: fixture.away, color: fixture.awayColor },
+  ];
 
   return (
     <article
-      className="ticket px-5 py-4"
+      className={`card overflow-hidden transition-colors ${editable ? "hover:border-line-strong" : "bg-surface/70"}`}
       aria-label={`${fixture.home} vs ${fixture.away}`}
-      data-locked={locked || undefined}
     >
-      <div className="flex items-center justify-between gap-2 text-xs mb-3 min-h-5">
-        <Status fixture={fixture} locked={locked} now={now} />
-        {points !== null && <PointsBadge points={points} />}
+      <div className="flex min-h-11 items-center justify-between gap-2 border-b border-line px-4 py-2 text-xs">
+        <StatusLine fixture={fixture} locked={locked} now={now} />
+        <Aside fixture={fixture} locked={locked} now={now} points={points} />
       </div>
 
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-4">
-        <div className="flex items-center gap-3 min-w-0">
-          <Badge team={fixture.home} color={fixture.homeColor} />
-          <p className="font-semibold truncate text-sm sm:text-base">{fixture.home}</p>
+      {!editable && (
+        <div className="flex justify-end gap-1 px-4 pt-2 text-[10px] uppercase tracking-widest text-muted" aria-hidden>
+          {fixture.result && <span className="w-10 text-center">FT</span>}
+          <span className="w-10 text-center">Pick</span>
         </div>
+      )}
 
-        <div className="ticket-divider px-2 sm:px-4 flex items-center gap-2 sm:gap-3">
-          {showStatic ? (
-            <div
-              className="score-font flex items-center gap-2 text-2xl font-bold"
-              aria-label={pick ? `Pick ${pick.home}–${pick.away}` : "No pick"}
-            >
-              <span className={pick ? "text-[var(--accent-gold)]" : "text-[var(--text-muted)]"}>
-                {pick?.home ?? "–"}
-              </span>
-              <span className="text-[var(--text-muted)]">:</span>
-              <span className={pick ? "text-[var(--accent-gold)]" : "text-[var(--text-muted)]"}>
-                {pick?.away ?? "–"}
-              </span>
-            </div>
-          ) : (
-            <>
+      <div className={`px-4 ${editable ? "py-2" : "pb-2"}`}>
+        {sides.map(({ key, team, color }) => (
+          <div key={key} className="flex items-center gap-3 py-1.5">
+            <Badge team={team} color={color} />
+            <span className="min-w-0 flex-1 text-[15px] font-semibold leading-tight">{team}</span>
+            {editable ? (
               <ScoreStepper
-                label="Home"
-                team={fixture.home}
-                value={pick?.home ?? null}
-                onChange={(v) => onChange?.({ home: v, away: pick?.away ?? 0 })}
+                team={team}
+                value={pick ? pick[key] : null}
+                onChange={(v) => {
+                  const base = pick ?? { home: 0, away: 0 };
+                  onChange?.({ ...base, [key]: v });
+                }}
               />
-              <span className="text-[var(--text-muted)] score-font pt-5" aria-hidden>
-                :
+            ) : (
+              <span className="flex gap-1" aria-label={`${team}: ${fixture.result ? `scored ${fixture.result[key]}, ` : ""}pick ${pick ? pick[key] : "none"}`}>
+                {fixture.result && <ScoreValue value={fixture.result[key]} tone="result" />}
+                <ScoreValue value={pick?.[key]} tone="pick" />
               </span>
-              <ScoreStepper
-                label="Away"
-                team={fixture.away}
-                value={pick?.away ?? null}
-                onChange={(v) => onChange?.({ home: pick?.home ?? 0, away: v })}
-              />
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center gap-3 min-w-0 justify-end">
-          <p className="font-semibold truncate text-right text-sm sm:text-base">{fixture.away}</p>
-          <Badge team={fixture.away} color={fixture.awayColor} />
-        </div>
+            )}
+          </div>
+        ))}
       </div>
     </article>
   );
